@@ -1,12 +1,12 @@
-# import gym
-# from gym import error, spaces, utils
-# from gym.utils import seeding
+import gym
+from gym import error, spaces, utils
+from gym.utils import seeding
 import numpy as np
 from  matplotlib import pyplot as plt
 import random
 
-# class PhotosynthisisEnv(gym.Env):
-class PhotosynthisisEnv:
+class PhotosynthisisEnv(gym.Env):
+# class PhotosynthisisEnv:
     metadata = {'render.modes': ['human']}
     """
     - board
@@ -58,15 +58,15 @@ class PhotosynthisisEnv:
     drawing_initialized = False
     random_players = True
     allowed_player_types = [0,1]
-    prespecified_players = [1,None,None,None]
-    # action_space = spaces.Discrete(42)
-    # observation_space = spaces.Box(low=0,high=1,shape=(88,1),dtype=np.float16)
-    count = 0
+    prespecified_players = [4,None,None,None]
+    action_space = spaces.Discrete(42)
+    observation_space = spaces.Box(low=0,high=1,shape=(88,),dtype=np.float16)
+    record = [0,0,0]
 
 
     def __init__(self):
         # Initialize Enviroment
-        # random.seed(10)
+        random.seed(10)
         self.__create_board()
         self.reset()
 
@@ -76,22 +76,26 @@ class PhotosynthisisEnv:
             self.__get_state()
             self.__get_reward()
 
-            if self.players[self.players_turn]["type"] == self.random:
-                action_index = self.__act_randomly()
-            elif self.players[self.players_turn]["type"] == self.logic:
-                action_index = self.__act_logically()
-            elif self.players[self.players_turn]["type"] == self.old_ai:
-                pass # TODO
-            elif self.players[self.players_turn]["type"] == self.human:
-                action_index = self.__act_humanly()
-            elif self.players[self.players_turn]["type"]== self.ai:
-                if fresh_ai_action_avaliable:
-                    action_index = ai_action_index
-                    fresh_ai_action_avaliable = False
-                else:
-                    return self.state, self.reward, self.done, {}
+            if np.count_nonzero(np.isfinite(self.actions)) == 1:
+                action_index = 0
+            else:
+                if self.players[self.players_turn]["type"] == self.random:
+                    action_index = self.__act_randomly()
+                elif self.players[self.players_turn]["type"] == self.logic:
+                    action_index = self.__act_logically()
+                elif self.players[self.players_turn]["type"] == self.old_ai:
+                    pass # TODO
+                elif self.players[self.players_turn]["type"] == self.human:
+                    action_index = self.__act_humanly()
+                elif self.players[self.players_turn]["type"]== self.ai:
+                    if fresh_ai_action_avaliable:
+                        action_index = ai_action_index
+                        fresh_ai_action_avaliable = False
+                    else:
+                        return self.state, self.reward, self.done, {}
 
             self.__take_turn(action_index)
+
             if manually_created:
                 self.render()
 
@@ -140,6 +144,12 @@ class PhotosynthisisEnv:
             self.board[spot]["planter"] = set()
             self.board[spot]["type"] = self.empty
             self.board[spot]["owner"] = None
+
+        self.__get_actions()
+        self.__get_state()
+        self.__get_reward()
+
+        return self.state
 
     def render(self, mode='human', close=False):
         if mode == 'human':
@@ -236,7 +246,7 @@ class PhotosynthisisEnv:
         State Vector Definition:
         [Spot Size[0:36],Spot Owner[0:36],store[0:3],bank[0:3],light,turns remaining,starting player,sun,players,initial_setup]
         """
-        self.state = np.zeros((88))
+        self.state = np.zeros((88,))
 
         # Get the current value and normalize by the maximum value
         for i,spot in enumerate(self.board_spots):
@@ -544,10 +554,25 @@ class PhotosynthisisEnv:
 
     def __get_reward(self):
         if self.done:
-            scores = np.zeros(self.player_count)
-            for player in range(self.player_count):
-                scores[player] = self.players[player]["points"]
-            self.reward = scores[0]-max(scores[1:self.player_count]) # handle tie
+            for k in self.players:
+                if self.players[k]["type"] == self.ai:
+                    rl_score = 0
+                    other_scores = np.zeros(self.player_count-1)
+                    index = 0
+                    for k2 in self.players:
+                        if not k2 == k:
+                            other_scores[index] = self.players[k2]["points"]
+                            index += 1
+                        else:
+                            rl_score = self.players[k2]["points"]
+                    self.reward = rl_score-max(other_scores) # TODO handle tie
+                    if self.reward > 0:
+                        self.record[0] += 1
+                    elif self.reward == 0:
+                        self.record[1] += 1
+                    else:
+                        self.record[2] += 1
+                    break
         else:
             self.reward = 0
 
@@ -582,24 +607,25 @@ class PhotosynthisisEnv:
         return random.choice(self.possible_actions)
 
     def __act_humanly(self):
-        choosen_action = 0
-
-        while 1:
-            print(self.color + "'s Turn: ")
-            print("Game Details:    Turns Remaining: {0:2}    Initial Setup: {5:2}    Sun: {2:2}    Starting Player: {1:2}    Players: {3:2}".format(self.state[81,0]*18,self.state[82,0]*3,self.state[83,0]*5,self.state[84,0]*4,self.state[85,0]))
-            print("Bank:    Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}    Light: {4:2}".format(self.state[76,0]*8,self.state[77,0]*8,self.state[78,0]*8,self.state[79,0]*8,self.state[80,0]*20))
-            print("Store:   Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}".format(self.state[72,0]*4,self.state[73,0]*4,self.state[74,0]*4,self.state[75,0]*4))
-            print("-------------------------------------------")
-            print("Action Key:    0=pass    1-37=Grow Tile x    38=Buy Seed    39=Buy Small Tree    40=Buy Medium Tree    41=Buy Large Tree")
-            choosen_action_string = input("What action do you choose: ")
-            choosen_action = -1
-            if choosen_action_string.isdigit():
-                choosen_action=int(choosen_action_string)
-                if 0<=choosen_action and choosen_action<len(self.actions):
-                    break
-
-            print("\n\n")
-            print("INVALID ACTION")
-            print("\n\n")
-
-        return choosen_action
+        pass # TODO fix state
+        # choosen_action = 0
+        #
+        # while 1:
+        #     print(self.color + "'s Turn: ")
+        #     print("Game Details:    Turns Remaining: {0:2}    Initial Setup: {5:2}    Sun: {2:2}    Starting Player: {1:2}    Players: {3:2}".format(self.turns_remaining,self.initial_setup,self.sun_cycle,self.starting_player,self.player_count))
+        #     print("Bank:    Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}    Light: {4:2}".format(self.players,self.state[77,0]*8,self.state[78,0]*8,self.state[79,0]*8,self.state[80,0]*20))
+        #     print("Store:   Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}".format(self.state[72,0]*4,self.state[73,0]*4,self.state[74,0]*4,self.state[75,0]*4))
+        #     print("-------------------------------------------")
+        #     print("Action Key:    0=pass    1-37=Grow Tile x    38=Buy Seed    39=Buy Small Tree    40=Buy Medium Tree    41=Buy Large Tree")
+        #     choosen_action_string = input("What action do you choose: ")
+        #     choosen_action = -1
+        #     if choosen_action_string.isdigit():
+        #         choosen_action=int(choosen_action_string)
+        #         if 0<=choosen_action and choosen_action<len(self.actions):
+        #             break
+        #
+        #     print("\n\n")
+        #     print("INVALID ACTION")
+        #     print("\n\n")
+        #
+        # return choosen_action
