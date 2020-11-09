@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 
 from gym_photosynthisis.envs.photosynthisis_env import PhotosynthisisEnv
 
-from stable_baselines.deepq import MlpPolicy
-from stable_baselines import DQN
+# from stable_baselines.deepq import MlpPolicy
+from stable_baselines.common.policies import MlpPolicy
+from stable_baselines import PPO2
 from stable_baselines import results_plotter
 from stable_baselines.bench import Monitor
 
@@ -28,7 +29,7 @@ def moving_average(values, window):
     return np.convolve(values, weights, 'valid')
 
 
-def plot_results(log_folder, title='Learning Curve DQN'):
+def plot_results(log_folder, title='Learning Curve PPO2'):
     """
     plot the results
 
@@ -36,9 +37,8 @@ def plot_results(log_folder, title='Learning Curve DQN'):
     :param title: (str) the title of the task to plot
     """
     x, y = ts2xy(load_results(log_folder), 'timesteps')
-    print(x)
-    print(y)
-    y = moving_average(y, window=5)
+
+    y = moving_average(y, window=100)
     # Truncate x
     x = x[len(x) - len(y):]
 
@@ -54,17 +54,17 @@ if not(os.path.exists('data')):
     os.makedirs('data')
 if not(os.path.exists('game_logs')):
     os.makedirs('game_logs')
-logdir = 'photosynthisis_DQN_-v0_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+logdir = 'photosynthisis_PPO2_-v0_' + time.strftime("%d-%m-%Y_%H-%M-%S")
 logdir = os.path.join('data', logdir)
 if not(os.path.exists(logdir)):
     os.makedirs(logdir)
 
-env = PhotosynthisisEnv()
+env = PhotosynthisisEnv(prespecified_players=[PhotosynthisisEnv.ai,None,None,None])
 env = Monitor(env, logdir)
 
-model = DQN(MlpPolicy, env, verbose=1)
-model.learn(total_timesteps=100000, log_interval=10)
-model.save("photosynthisis_DQN_model_v1")
+model = PPO2(MlpPolicy, env, verbose=1)
+model.learn(total_timesteps=10000000, log_interval=1000)
+model.save("models/PPO2_models/photosynthisis_PPO2_model_v1")
 
 print(env.record)
 

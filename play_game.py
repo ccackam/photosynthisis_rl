@@ -2,12 +2,8 @@ from gym_photosynthisis.envs.photosynthisis_env import PhotosynthisisEnv
 
 print("Let's Play Photosynthisis!")
 
-game = PhotosynthisisEnv()
+game = PhotosynthisisEnv(prespecified_players=[PhotosynthisisEnv.old_ai,None,None,None],animate=True)
 
-game.step(None)
+_,r,_,_ = game.step(None)
 
-game.reset()
-
-game.step(None)
-
-print("Good Game!")
+print("\nGood Game!")

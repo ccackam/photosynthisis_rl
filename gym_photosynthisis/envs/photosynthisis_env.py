@@ -1,6 +1,11 @@
 import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
+
+from stable_baselines import PPO2
+
+from os import listdir
+
 import numpy as np
 from  matplotlib import pyplot as plt
 import random
@@ -53,24 +58,29 @@ class PhotosynthisisEnv(gym.Env):
     store_spots = {0:[1,1,2,2],1:[2,2,3,3],2:[3,3,4],3:[4,5]}
     suns = [(2,0),(1,-2),(-1,-2),(-2,0),(-1,2),(1,2)]
     initial_ring_cycle_points = {1:[14,14,13,13,13,12,12,12,12],2:[17,16,16,14,14,13,13],3:[19,18,18,17,17],4:[22,21,20]}
+    color_names = ["Red","Green","Blue","Yellow"]
+    type_names = ["Random","Logical","Old AI","Human","AI"]
     player_colors = [[1,0,0],[0,1,0],[0,0,1],[1,1,0]]
     center = (0,0)
     drawing_initialized = False
-    random_players = True
-    allowed_player_types = [0,1]
-    prespecified_players = [4,None,None,None]
     action_space = spaces.Discrete(42)
     observation_space = spaces.Box(low=0,high=1,shape=(88,),dtype=np.float16)
     record = [0,0,0]
 
 
-    def __init__(self):
+    def __init__(self,random_players=True,allowed_player_types=[0,1],prespecified_players=[None,None,None,None],animate=False,wait_for_approval_to_advance=False):
+        self.random_players = random_players
+        self.allowed_player_types = allowed_player_types
+        self.prespecified_players = prespecified_players
+        self.animate = animate
+        self.wait_for_approval_to_advance = wait_for_approval_to_advance
+
         # Initialize Enviroment
-        random.seed(10)
+        # random.seed(10)
         self.__create_board()
         self.reset()
 
-    def step(self, ai_action_index, fresh_ai_action_avaliable=True,manually_created=False):
+    def step(self, ai_action_index, fresh_ai_action_avaliable=True):
         while not self.done:
             self.__get_actions()
             self.__get_state()
@@ -84,7 +94,8 @@ class PhotosynthisisEnv(gym.Env):
                 elif self.players[self.players_turn]["type"] == self.logic:
                     action_index = self.__act_logically()
                 elif self.players[self.players_turn]["type"] == self.old_ai:
-                    pass # TODO
+                    print("got here")
+                    action_index, _ = self.players[self.players_turn]["model"].predict(self.state)
                 elif self.players[self.players_turn]["type"] == self.human:
                     action_index = self.__act_humanly()
                 elif self.players[self.players_turn]["type"]== self.ai:
@@ -95,9 +106,6 @@ class PhotosynthisisEnv(gym.Env):
                         return self.state, self.reward, self.done, {}
 
             self.__take_turn(action_index)
-
-            if manually_created:
-                self.render()
 
         self.__get_state()
         self.__get_reward()
@@ -133,7 +141,12 @@ class PhotosynthisisEnv(gym.Env):
         else:
             self.player_count = len(self.prespecified_players)
         for i,type in enumerate(self.prespecified_players):
-            self.players[i] = {"store":{self.seed:4,self.small:4,self.medium:3,self.large:2},"bank":{self.seed:2,self.small:4,self.medium:1,self.large:0},"light":0,"points":0,"init_turns":2,"type":type}
+            self.players[i] = {"store":{self.seed:4,self.small:4,self.medium:3,self.large:2},"bank":{self.seed:2,self.small:4,self.medium:1,self.large:0},"light":0,"points":0,"init_turns":2,"type":type,"model":None}
+            if type == self.old_ai:
+                # TODO make algorithm change programatic
+                model_list = listdir("models/PPO2_models")
+                print(model_list)
+                self.players[i]["model"] = PPO2.load("models/PPO2_models/"+random.choice(model_list))
         self.players_turn = random.randrange(0,self.player_count)
         self.starting_player = self.players_turn
 
@@ -178,21 +191,22 @@ class PhotosynthisisEnv(gym.Env):
             plt.pause(0.001)
 
             if self.done:
-                game_over_string = "GAME OVER - Final Score:    "
+                game_over_string = "\nGAME OVER - Final Score:    "
                 for player in range(self.player_count):
-                    game_over_string += str(player) + ": " + str(self.players[player]["points"]) + "    "
+                    game_over_string += self.color_names[player] + " (" + self.type_names[self.players[player]["type"]] + "): " + str(self.players[player]["points"]) + "    "
                 print(game_over_string)
+                self.__get_reward()
+                print("Reward Given: {}".format(self.reward))
 
     def __take_turn(self, action_index):
         # Confirm that this player can aford this action
         if self.actions[action_index] <= self.players[self.players_turn]["light"]:
 
-            # input("Press Enter to Advance: ")
-            # print(self.actions)
-            # print(action_index)
-
             # Pay cost of the action
             self.players[self.players_turn]["light"] -= self.actions[action_index]
+
+            if self.animate:
+                print("\n{0} of type {1} takes action {2}".format(self.color_names[self.players_turn],self.type_names[self.players[self.players_turn]["type"]],action_index))
 
             # Take indicated Action
             if action_index == 0: # Pass Turn
@@ -206,6 +220,11 @@ class PhotosynthisisEnv(gym.Env):
 
             # We must keep track of which tree planted which seed.
             self.__update_seeds()
+
+            if self.animate:
+                self.render()
+            if self.wait_for_approval_to_advance:
+                input("Press Enter to Advance: ")
 
     def __calculate_light(self):
         # Reset the map
@@ -320,11 +339,11 @@ class PhotosynthisisEnv(gym.Env):
                 # Variables for readability:
                 store_spots = len(self.store_spots[resource])
                 inventory = self.players[self.players_turn]["store"][resource]
-                purchase_cost = self.store_spots[resource][store_spots - inventory - 1]
+                purchase_cost = self.store_spots[resource][store_spots - inventory] if inventory else float("Inf")
                 spending_cash = self.players[self.players_turn]["light"]
 
                 # The price is finite if inventory is avaliable,
-                self.actions[38+resource] = self.store_spots[resource][store_spots-inventory] if (inventory and (purchase_cost <= spending_cash)) else float("Inf")
+                self.actions[38+resource] = purchase_cost if (purchase_cost <= spending_cash) else float("Inf")
 
         # Get possible actions for quick easy referance
         self.possible_actions = [i for i,a in enumerate(self.actions) if a <= self.players[self.players_turn]["light"]]
@@ -554,25 +573,23 @@ class PhotosynthisisEnv(gym.Env):
 
     def __get_reward(self):
         if self.done:
+            rl_score = 0
+            other_scores = np.zeros(self.player_count-1)
+            index = 0
             for k in self.players:
-                if self.players[k]["type"] == self.ai:
-                    rl_score = 0
-                    other_scores = np.zeros(self.player_count-1)
-                    index = 0
-                    for k2 in self.players:
-                        if not k2 == k:
-                            other_scores[index] = self.players[k2]["points"]
-                            index += 1
-                        else:
-                            rl_score = self.players[k2]["points"]
-                    self.reward = rl_score-max(other_scores) # TODO handle tie
-                    if self.reward > 0:
-                        self.record[0] += 1
-                    elif self.reward == 0:
-                        self.record[1] += 1
-                    else:
-                        self.record[2] += 1
-                    break
+                if not self.players[k]["type"] == self.old_ai: # WORKING change back
+                    other_scores[index] = self.players[k]["points"]
+                    index += 1
+                else:
+                    rl_score = self.players[k]["points"]
+            self.reward = rl_score-max(other_scores) # TODO handle tie
+
+            if self.reward > 0:
+                self.record[0] += 1
+            elif self.reward == 0:
+                self.record[1] += 1
+            else:
+                self.record[2] += 1
         else:
             self.reward = 0
 
@@ -607,25 +624,25 @@ class PhotosynthisisEnv(gym.Env):
         return random.choice(self.possible_actions)
 
     def __act_humanly(self):
-        pass # TODO fix state
-        # choosen_action = 0
-        #
-        # while 1:
-        #     print(self.color + "'s Turn: ")
-        #     print("Game Details:    Turns Remaining: {0:2}    Initial Setup: {5:2}    Sun: {2:2}    Starting Player: {1:2}    Players: {3:2}".format(self.turns_remaining,self.initial_setup,self.sun_cycle,self.starting_player,self.player_count))
-        #     print("Bank:    Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}    Light: {4:2}".format(self.players,self.state[77,0]*8,self.state[78,0]*8,self.state[79,0]*8,self.state[80,0]*20))
-        #     print("Store:   Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}".format(self.state[72,0]*4,self.state[73,0]*4,self.state[74,0]*4,self.state[75,0]*4))
-        #     print("-------------------------------------------")
-        #     print("Action Key:    0=pass    1-37=Grow Tile x    38=Buy Seed    39=Buy Small Tree    40=Buy Medium Tree    41=Buy Large Tree")
-        #     choosen_action_string = input("What action do you choose: ")
-        #     choosen_action = -1
-        #     if choosen_action_string.isdigit():
-        #         choosen_action=int(choosen_action_string)
-        #         if 0<=choosen_action and choosen_action<len(self.actions):
-        #             break
-        #
-        #     print("\n\n")
-        #     print("INVALID ACTION")
-        #     print("\n\n")
-        #
-        # return choosen_action
+        choosen_action = 0
+
+        while 1:
+            print("\n" + self.color_names[self.players_turn] + "'s Turn: ")
+            print("Game Details:    Turns Remaining: {0:2}    Initial Setup: {1:2}    Sun: {2:2}    Starting Player: {3:2}    Players: {4:2}".format(self.turns_remaining, self.initial_setup, self.sun_cycle, self.starting_player, self.player_count))
+            print("Bank:    Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}    Light: {4:2}".format(self.players[self.players_turn]["bank"][self.seed], self.players[self.players_turn]["bank"][self.small], self.players[self.players_turn]["bank"][self.medium], self.players[self.players_turn]["bank"][self.large], self.players[self.players_turn]["light"]))
+            print("Store:   Seeds: {0:2}    Small: {1:2}    Medium: {2:2}    Large: {3:2}".format(self.players[self.players_turn]["store"][self.seed], self.players[self.players_turn]["store"][self.small], self.players[self.players_turn]["store"][self.medium], self.players[self.players_turn]["store"][self.large]))
+            print("-------------------------------------------")
+            print("Possible Actions: {0}".format(self.possible_actions))
+            print("Action Key:    0=pass    1-37=Grow Tile x    38=Buy Seed    39=Buy Small Tree    40=Buy Medium Tree    41=Buy Large Tree")
+            choosen_action_string = input("What action do you choose: ")
+            choosen_action = -1
+            if choosen_action_string.isdigit():
+                choosen_action=int(choosen_action_string)
+                if choosen_action in self.possible_actions:
+                    break
+
+            print("\n\n")
+            print("INVALID ACTION")
+            print("\n\n")
+
+        return choosen_action
