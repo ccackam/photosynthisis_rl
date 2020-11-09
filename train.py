@@ -2,7 +2,7 @@ import gym
 import numpy as np
 import matplotlib.pyplot as plt
 
-from gym_photosynthisis.envs.photosynthisis_env import PhotosynthisisEnv
+from photosynthisis_env import PhotosynthisisEnv
 
 # from stable_baselines.deepq import MlpPolicy
 from stable_baselines.common.policies import MlpPolicy

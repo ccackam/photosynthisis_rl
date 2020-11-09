@@ -1,7 +1,7 @@
 import timeit
 
 mysetup = """
-from gym_photosynthisis.envs.photosynthisis_env import PhotosynthisisEnv
+from photosynthisis_env import PhotosynthisisEnv
 game = PhotosynthisisEnv()
 """
 

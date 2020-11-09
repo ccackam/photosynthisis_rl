@@ -1,4 +1,4 @@
-from gym_photosynthisis.envs.photosynthisis_env import PhotosynthisisEnv
+from photosynthisis_env import PhotosynthisisEnv
 
 print("Let's Play Photosynthisis!")
 
